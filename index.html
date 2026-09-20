@@ -5,72 +5,53 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AMR-S250A 3D Design Review</title>
   <style>
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
     body {
       margin: 0;
       overflow: hidden;
-      background-color: #1a1b1e;
+      background-color: #121316;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       user-select: none;
     }
-    #canvas-container {
-      width: 100vw;
-      height: 100vh;
-      display: block;
-    }
+    #canvas-container { width: 100vw; height: 100vh; display: block; }
     #loading {
       position: absolute;
-      top: 50%;
-      left: 50%;
+      top: 50%; left: 50%;
       transform: translate(-50%, -50%);
-      color: #ffffff;
+      color: #fff;
       font-size: 14px;
-      font-weight: 500;
-      background: rgba(15, 17, 23, 0.85);
-      padding: 16px 28px;
-      border-radius: 10px;
+      background: rgba(15, 17, 23, 0.9);
+      padding: 14px 24px;
+      border-radius: 8px;
       pointer-events: none;
-      transition: opacity 0.3s ease;
       z-index: 10;
-      text-align: center;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255,255,255,0.1);
     }
     #ui-panel {
       position: absolute;
-      top: 16px;
-      left: 16px;
-      background: rgba(24, 26, 32, 0.85);
-      backdrop-filter: blur(10px);
-      padding: 14px 18px;
+      top: 16px; left: 16px;
+      background: rgba(22, 24, 29, 0.9);
+      backdrop-filter: blur(8px);
+      padding: 16px 18px;
       border-radius: 10px;
       color: #e4e4e7;
       display: flex;
       flex-direction: column;
-      gap: 10px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      gap: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      border: 1px solid rgba(255, 255, 255, 0.1);
       z-index: 5;
+      font-size: 13px;
     }
-    .title {
-      font-size: 14px;
-      font-weight: 600;
-      color: #38bdf8;
-      display: flex;
-      align-items: center;
-      gap: 6px;
+    .title { font-size: 14px; font-weight: bold; color: #38bdf8; }
+    .control-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    input[type="range"] { width: 110px; }
+    button {
+      background: #27272a; color: #f4f4f5; border: 1px solid #3f3f46;
+      padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 12px;
     }
-    .info {
-      font-size: 12px;
-      color: #94a3b8;
-    }
-    #file-input {
-      font-size: 11px;
-      color: #cbd5e1;
-      margin-top: 4px;
-    }
+    button:hover { background: #3f3f46; }
+    #file-input { font-size: 11px; color: #a1a1aa; }
   </style>
 
   <script type="importmap">
@@ -84,12 +65,23 @@
 </head>
 <body>
   <div id="canvas-container"></div>
-  <div id="loading">모델 다운로드 중...</div>
+  <div id="loading">모델 로딩 중...</div>
 
   <div id="ui-panel">
-    <div class="title">AMR-S250A Design Viewer</div>
-    <div class="info" id="model-info">마우스 드래그: 회전 | 우클릭: 이동 | 휠: 줌</div>
-    <input type="file" id="file-input" accept=".ply" title="로컬 PLY 파일 열기" />
+    <div class="title">AMR-S250A Design Review</div>
+    <div class="control-row">
+      <span>포인트 크기</span>
+      <input type="range" id="point-size" min="0.5" max="15" step="0.5" value="3" />
+    </div>
+    <div class="control-row">
+      <span>렌더링 모드</span>
+      <button id="toggle-mode">메시 / 포인트 전환</button>
+    </div>
+    <div class="control-row">
+      <span>CAD 방향 보정</span>
+      <button id="rotate-axis">Z-Up / Y-Up 회전</button>
+    </div>
+    <input type="file" id="file-input" accept=".ply" />
   </div>
 
   <script type="module">
@@ -100,167 +92,175 @@
 
     const container = document.getElementById('canvas-container');
     const loadingElem = document.getElementById('loading');
-    const modelInfoElem = document.getElementById('model-info');
+    const pointSizeInput = document.getElementById('point-size');
+    const toggleModeBtn = document.getElementById('toggle-mode');
+    const rotateAxisBtn = document.getElementById('rotate-axis');
     const fileInput = document.getElementById('file-input');
 
-    // 1. 씬 & 카메라 & 렌더러 설정
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x131417);
+    scene.background = new THREE.Color(0x111215);
 
-    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.01, 5000);
-    camera.position.set(0, 1.5, 2.5);
-
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.001, 10000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
     container.appendChild(renderer.domElement);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
 
-    // 2. 바닥 그리드 및 조명
-    const gridHelper = new THREE.GridHelper(5, 50, 0x38bdf8, 0x27272a);
-    gridHelper.position.y = -0.001;
-    scene.add(gridHelper);
+    // 그리드 및 조명
+    const grid = new THREE.GridHelper(2, 40, 0x38bdf8, 0x27272a);
+    scene.add(grid);
 
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.8);
     scene.add(ambientLight);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 2.0);
+    dirLight.position.set(5, 10, 7);
+    scene.add(dirLight);
 
-    const dirLight1 = new THREE.DirectionalLight(0xffffff, 2.0);
-    dirLight1.position.set(5, 12, 8);
-    scene.add(dirLight1);
+    let currentObject = null;
+    let rawGeometry = null;
+    let isMeshMode = false;
+    let pointsMaterial = null;
 
-    const dirLight2 = new THREE.DirectionalLight(0xffffff, 1.0);
-    dirLight2.position.set(-5, -6, -5);
-    scene.add(dirLight2);
-
-    let currentModel = null;
-    const loader = new PLYLoader();
-
-    // 3. 지오메트리 처리 및 자동 스케일링/센터링
     function applyGeometry(geometry) {
-      if (currentModel) {
-        scene.remove(currentModel);
-        if (currentModel.geometry) currentModel.geometry.dispose();
-        if (currentModel.material) currentModel.material.dispose();
-      }
+      rawGeometry = geometry;
+      if (currentObject) scene.remove(currentObject);
 
       geometry.computeVertexNormals();
-      geometry.center(); // 원점(0, 0, 0) 중앙 정렬
+      geometry.center(); // 원점 정렬
 
-      const hasFaces = geometry.getIndex() !== null || (geometry.attributes.position && geometry.attributes.position.count % 3 === 0 && !geometry.attributes.normal);
+      // 1. 모델 크기(스케일) 자동 계산
+      geometry.computeBoundingSphere();
+      const radius = geometry.boundingSphere.radius || 1;
 
-      let object;
+      // 2. 포인트 재질 생성 (점 크기를 가시성 있게 확대)
+      const hasColor = geometry.hasAttribute('color');
+      pointsMaterial = new THREE.PointsMaterial({
+        size: (radius * 0.005) * parseFloat(pointSizeInput.value),
+        vertexColors: hasColor,
+        color: hasColor ? 0xffffff : 0xd1d5db,
+        sizeAttenuation: true
+      });
+
+      // 3. 메시 재질 생성
+      const meshMaterial = new THREE.MeshStandardMaterial({
+        vertexColors: hasColor,
+        color: hasColor ? 0xffffff : 0x9ca3af,
+        roughness: 0.4,
+        metalness: 0.2,
+        side: THREE.DoubleSide
+      });
+
+      // 면(Face) 데이터 존재 여부 확인
+      const hasFaces = geometry.getIndex() !== null || 
+                       (geometry.attributes.position && geometry.attributes.position.count > 0 && !geometry.attributes.normal);
+
       if (hasFaces) {
-        // 메시 모델
-        const material = new THREE.MeshStandardMaterial({
-          vertexColors: geometry.hasAttribute('color'),
-          color: geometry.hasAttribute('color') ? 0xffffff : 0x94a3b8,
-          roughness: 0.5,
-          metalness: 0.2,
-          side: THREE.DoubleSide
-        });
-        object = new THREE.Mesh(geometry, material);
+        currentObject = new THREE.Mesh(geometry, meshMaterial);
+        isMeshMode = true;
       } else {
-        // 포인트 클라우드 모델
-        const material = new THREE.PointsMaterial({
-          size: 0.015,
-          vertexColors: geometry.hasAttribute('color'),
-          color: geometry.hasAttribute('color') ? 0xffffff : 0x38bdf8
-        });
-        object = new THREE.Points(geometry, material);
+        currentObject = new THREE.Points(geometry, pointsMaterial);
+        isMeshMode = false;
       }
 
-      // 바운딩 박스/스피어 계산
-      geometry.computeBoundingBox();
-      const bbox = geometry.boundingBox;
-      const size = new THREE.Vector3();
-      bbox.getSize(size);
+      // CAD 좌표계(Z-up) 보정: 기본 -90도 회전 적용
+      currentObject.rotation.x = -Math.PI / 2;
 
-      // 모델 바닥이 그리드 위에 놓이도록 Y축 정렬
-      object.position.y = size.y / 2;
+      scene.add(currentObject);
 
-      currentModel = object;
-      scene.add(currentModel);
-
-      // 그리드 크기 자동 조절
-      geometry.computeBoundingSphere();
-      const sphere = geometry.boundingSphere;
-      const radius = sphere ? sphere.radius : 1;
-
-      gridHelper.scale.set(radius, 1, radius);
-
-      // 카메라 뷰 각도 최적화
+      // 카메라 시점 최적화
       camera.position.set(radius * 1.5, radius * 1.2, radius * 1.8);
-      controls.target.set(0, size.y / 2, 0);
-      controls.maxDistance = radius * 10;
+      controls.target.set(0, 0, 0);
       controls.update();
 
-      const vertexCount = geometry.attributes.position ? geometry.attributes.position.count.toLocaleString() : 0;
-      modelInfoElem.innerText = `정점: ${vertexCount}개 | 자동 정렬 완료`;
+      grid.scale.set(radius, 1, radius);
       loadingElem.style.display = 'none';
     }
 
-    // 4. PLY 로드 함수
-    function loadPLY(source, isBuffer = false) {
+    // 포인트 크기 조절
+    pointSizeInput.addEventListener('input', (e) => {
+      if (pointsMaterial && rawGeometry) {
+        const radius = rawGeometry.boundingSphere.radius || 1;
+        pointsMaterial.size = (radius * 0.003) * parseFloat(e.target.value);
+      }
+    });
+
+    // 메시 / 포인트 모드 토글
+    toggleModeBtn.addEventListener('click', () => {
+      if (!rawGeometry) return;
+      scene.remove(currentObject);
+
+      const hasColor = rawGeometry.hasAttribute('color');
+      if (isMeshMode) {
+        currentObject = new THREE.Points(rawGeometry, pointsMaterial);
+        isMeshMode = false;
+      } else {
+        const meshMat = new THREE.MeshStandardMaterial({
+          vertexColors: hasColor,
+          color: hasColor ? 0xffffff : 0xa1a1aa,
+          side: THREE.DoubleSide
+        });
+        currentObject = new THREE.Mesh(rawGeometry, meshMat);
+        isMeshMode = true;
+      }
+      currentObject.rotation.x = -Math.PI / 2;
+      scene.add(currentObject);
+    });
+
+    // Z-Up / Y-Up 회전 토글
+    rotateAxisBtn.addEventListener('click', () => {
+      if (currentObject) {
+        currentObject.rotation.x = (currentObject.rotation.x === 0) ? -Math.PI / 2 : 0;
+      }
+    });
+
+    // 로더
+    const loader = new PLYLoader();
+    function loadPLY(url, isBuffer = false) {
       loadingElem.style.display = 'block';
       loadingElem.innerText = '3D 데이터 로드 중...';
 
       if (isBuffer) {
-        try {
-          const geometry = loader.parse(source);
-          applyGeometry(geometry);
-        } catch (err) {
-          loadingElem.innerText = '파일 파싱 오류가 발생했습니다.';
-          console.error(err);
-        }
+        applyGeometry(loader.parse(url));
       } else {
         loader.load(
-          source,
-          (geometry) => applyGeometry(geometry),
+          url,
+          (geom) => applyGeometry(geom),
           (xhr) => {
             if (xhr.lengthComputable) {
-              const percent = Math.round((xhr.loaded / xhr.total) * 100);
-              loadingElem.innerText = `다운로드 중... ${percent}%`;
+              loadingElem.innerText = `다운로드 중... ${Math.round((xhr.loaded / xhr.total) * 100)}%`;
             }
           },
           (err) => {
-            loadingElem.innerText = 'Release 파일 다운로드 실패. 네트워크를 확인하세요.';
-            console.error('PLY Load Error:', err);
+            loadingElem.innerText = '로드 실패. 로컬 파일을 업로드해보세요.';
+            console.error(err);
           }
         );
       }
     }
 
-    // 초기 기본 모델 로드
-    const defaultUrl = CONFIG.getModelUrl();
-    if (defaultUrl) {
-      loadPLY(defaultUrl);
-    }
+    // 기본 로드
+    const url = CONFIG.getModelUrl();
+    if (url) loadPLY(url);
 
-    // 로컬 파일 업로드 지원
     fileInput.addEventListener('change', (e) => {
       const file = e.target.files[0];
       if (!file) return;
-
       const reader = new FileReader();
-      reader.onload = (event) => {
-        loadPLY(event.target.result, true);
-      };
+      reader.onload = (evt) => loadPLY(evt.target.result, true);
       reader.readAsArrayBuffer(file);
     });
 
-    // 화면 리사이즈 핸들러
     window.addEventListener('resize', () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
     });
 
-    // 렌더링 루프
     function animate() {
       requestAnimationFrame(animate);
       controls.update();
