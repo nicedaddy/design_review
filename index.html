@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D PLY Viewer</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background-color: #121212;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    #canvas-container {
+      width: 100vw;
+      height: 100vh;
+    }
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #ffffff;
+      font-size: 15px;
+      background: rgba(0, 0, 0, 0.75);
+      padding: 14px 24px;
+      border-radius: 8px;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+      z-index: 10;
+      text-align: center;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    #ui-panel {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      background: rgba(24, 24, 27, 0.85);
+      backdrop-filter: blur(8px);
+      padding: 14px 18px;
+      border-radius: 8px;
+      color: #eaeaea;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      z-index: 5;
+    }
+    #ui-panel label {
+      font-size: 13px;
+      font-weight: 500;
+    }
+    #file-input {
+      font-size: 12px;
+      color: #bbb;
+    }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.165.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.165.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="canvas-container"></div>
+  <div id="loading">구글 드라이브에서 3D 모델을 불러오는 중...</div>
+
+  <div id="ui-panel">
+    <label>다른 로컬 PLY 파일 열기</label>
+    <input type="file" id="file-input" accept=".ply" />
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
+    
+    // 같은 폴더의 config.js 파일에서 구글 드라이브 URL 설정 가져오기
+    import { CONFIG } from './config.js';
+
+    const container = document.getElementById('canvas-container');
+    const loadingElem = document.getElementById('loading');
+    const fileInput = document.getElementById('file-input');
+
+    // 씬, 카메라, 렌더러 초기화
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x18181b);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 2000);
+    camera.position.set(0, 0, 3);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+
+    // 조명
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
+    scene.add(ambientLight);
+
+    const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.5);
+    dirLight1.position.set(5, 10, 7.5);
+    scene.add(dirLight1);
+
+    const dirLight2 = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight2.position.set(-5, -5, -5);
+    scene.add(dirLight2);
+
+    let currentModel = null;
+    const loader = new PLYLoader();
+
+    function applyGeometry(geometry) {
+      if (currentModel) {
+        scene.remove(currentModel);
+        if (currentModel.geometry) currentModel.geometry.dispose();
+        if (currentModel.material) currentModel.material.dispose();
+      }
+
+      geometry.computeVertexNormals();
+      geometry.center();
+
+      let object;
+      const hasFaces = geometry.getIndex() !== null;
+
+      if (hasFaces) {
+        const material = new THREE.MeshStandardMaterial({
+          vertexColors: geometry.hasAttribute('color'),
+          roughness: 0.6,
+          metalness: 0.1,
+          side: THREE.DoubleSide
+        });
+        object = new THREE.Mesh(geometry, material);
+      } else {
+        const material = new THREE.PointsMaterial({
+          size: 0.01,
+          vertexColors: geometry.hasAttribute('color')
+        });
+        object = new THREE.Points(geometry, material);
+      }
+
+      currentModel = object;
+      scene.add(currentModel);
+
+      geometry.computeBoundingSphere();
+      const sphere = geometry.boundingSphere;
+      const radius = sphere ? sphere.radius : 1;
+      
+      camera.position.set(0, radius * 0.8, radius * 2.2);
+      camera.lookAt(0, 0, 0);
+      controls.target.set(0, 0, 0);
+      controls.update();
+
+      loadingElem.style.display = 'none';
+    }
+
+    function loadPLY(source, isBuffer = false) {
+      loadingElem.style.display = 'block';
+      loadingElem.innerText = 'PLY 파싱 중...';
+
+      if (isBuffer) {
+        try {
+          const geometry = loader.parse(source);
+          applyGeometry(geometry);
+        } catch (err) {
+          loadingElem.innerText = '파일 파싱 에러 발생';
+          console.error(err);
+        }
+      } else {
+        loader.load(
+          source,
+          (geometry) => applyGeometry(geometry),
+          (xhr) => {
+            if (xhr.lengthComputable) {
+              const percent = Math.round((xhr.loaded / xhr.total) * 100);
+              loadingElem.innerText = `다운로드 중... ${percent}%`;
+            }
+          },
+          (err) => {
+            loadingElem.innerText = '파일 로드 실패 (공유 링크 권한 또는 네트워크 확인)';
+            console.error('PLY Load Error:', err);
+          }
+        );
+      }
+    }
+
+    // config.js의 설정을 기반으로 기본 모델 로드
+    const defaultUrl = CONFIG.getModelUrl();
+    if (defaultUrl) {
+      loadPLY(defaultUrl);
+    } else {
+      loadingElem.innerText = 'config.js의 구글 드라이브 링크를 확인해주세요.';
+    }
+
+    // 로컬 파일 업로드 처리
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        loadPLY(event.target.result, true);
+      };
+      reader.readAsArrayBuffer(file);
+    });
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>
