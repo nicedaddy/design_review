@@ -1,9 +1,10 @@
+
 export const CONFIG = {
-  // 릴리즈 원본 직링크
-  rawUrl: "https://github.com/nicedaddy/design_review/releases/download/v1.0.0/AMR-S250A_R3_MG.PLY",
+  // 생성하신 GitHub Release 다운로드 URL
+  rawReleaseUrl: "https://github.com/nicedaddy/design_review/releases/download/v1.0.0/AMR-S250A_R3_MG.PLY",
 
   getModelUrl() {
-    // CORS 차단 및 GitHub CDN 리다이렉션을 우회하기 위해 프록시 적용
-    return `https://corsproxy.io/?url=${encodeURIComponent(this.rawUrl)}`;
+    // GitHub Release의 302 리다이렉트와 CORS를 우회해 대용량 바이너리를 전달하는 프록시
+    return `https://proxy.corsfix.com/?${this.rawReleaseUrl}`;
   }
 };
